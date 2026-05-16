@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0b1d2a" />
+    <title>Arctic Survivor</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="game"></canvas>
+
+      <!-- HUD -->
+      <div id="hud" class="hud">
+        <div class="stat" title="Para">
+          <span class="ico">$</span><span id="hudMoney">0</span>
+        </div>
+        <div class="stat" title="Odun">
+          <span class="ico ico-wood"></span><span id="hudWood">0</span>
+        </div>
+        <div class="stat" title="Et">
+          <span class="ico ico-meat"></span><span id="hudMeat">0</span>
+        </div>
+        <div class="stat" title="Balta seviyesi">
+          <span class="ico ico-axe"></span><span id="hudAxe">1</span>
+        </div>
+        <div class="stat base" title="Üs canı">
+          <span class="ico ico-base"></span>
+          <div class="bar"><div id="hudBaseBar" class="bar-fill"></div></div>
+        </div>
+      </div>
+
+      <!-- Joystick -->
+      <div id="joystick" class="joystick">
+        <div id="stick" class="stick"></div>
+      </div>
+
+      <!-- Action button -->
+      <button id="btnAction" class="btn-action" aria-label="Saldır / Topla">
+        <span>⚔</span>
+      </button>
+
+      <!-- Shop / Market -->
+      <div id="shop" class="shop hidden">
+        <div class="shop-card">
+          <header>
+            <h2 id="shopTitle">Market</h2>
+            <button id="shopClose" class="x">×</button>
+          </header>
+          <div id="shopBody" class="shop-body"></div>
+        </div>
+      </div>
+
+      <!-- Placement bar -->
+      <div id="placeBar" class="place-bar hidden">
+        <span id="placeBarText">Üs içinde bir yere dokun</span>
+        <button id="placeCancel">İptal</button>
+      </div>
+
+      <!-- Tower management panel -->
+      <div id="towerPanel" class="tower-panel hidden">
+        <div class="tp-row">
+          <div class="tp-icon" id="tpIcon">🏹</div>
+          <div class="tp-info">
+            <div class="tp-title"><span id="tpName">Yay Kulesi</span> <span class="tp-level" id="tpLevel">Lv 1</span></div>
+            <div class="tp-bar"><div id="tpHpBar" class="tp-bar-fill"></div></div>
+            <div class="tp-stats" id="tpStats"></div>
+          </div>
+        </div>
+        <div class="tp-actions">
+          <button id="tpUpgrade" class="tp-btn primary">Yükselt</button>
+          <button id="tpRepair" class="tp-btn">Tamir</button>
+          <button id="tpSell" class="tp-btn danger">Sat</button>
+        </div>
+      </div>
+
+      <!-- Toast -->
+      <div id="toast" class="toast"></div>
+
+      <!-- Start screen -->
+      <div id="start" class="start">
+        <div class="start-card">
+          <h1>Arctic Survivor</h1>
+          <p>
+            Ağaçları kes, zombi ve ayıları biç. Üsse dön, eti sat, baltanı ve
+            üssünü güçlendir.
+          </p>
+          <ul class="legend">
+            <li><b>Joystick</b> ile hareket</li>
+            <li><b>⚔</b> butonu ile saldır / topla</li>
+            <li>Üsteki <b>tezgâhlara</b> dokun: market açılır</li>
+          </ul>
+          <button id="btnStart" class="btn-primary">Oyna</button>
+          <br />
+          <button id="btnReset" class="btn-link">Tüm ilerlemeyi sıfırla</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="game.js"></script>
+  </body>
+</html>
