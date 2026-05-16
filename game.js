@@ -19,6 +19,7 @@
     hudMeat: document.getElementById("hudMeat"),
     hudAxe: document.getElementById("hudAxe"),
     hudBaseBar: document.getElementById("hudBaseBar"),
+    hudScore: document.getElementById("hudScore"),
     shop: document.getElementById("shop"),
     shopTitle: document.getElementById("shopTitle"),
     shopBody: document.getElementById("shopBody"),
@@ -33,6 +34,20 @@
     placeBar: document.getElementById("placeBar"),
     placeBarText: document.getElementById("placeBarText"),
     placeCancel: document.getElementById("placeCancel"),
+    inputNickname: document.getElementById("inputNickname"),
+    skinPrev: document.getElementById("skinPrev"),
+    skinNext: document.getElementById("skinNext"),
+    skinIcon: document.getElementById("skinIcon"),
+    skinName: document.getElementById("skinName"),
+    skinPrice: document.getElementById("skinPrice"),
+    btnBuySkin: document.getElementById("btnBuySkin"),
+    btnSelectSkin: document.getElementById("btnSelectSkin"),
+    leaderboardList: document.getElementById("leaderboardList"),
+    btnPause: document.getElementById("btnPause"),
+    pauseMenu: document.getElementById("pauseMenu"),
+    btnResume: document.getElementById("btnResume"),
+    btnSettings: document.getElementById("btnSettings"),
+    btnToLobby: document.getElementById("btnToLobby"),
   };
 
   const view = { w: 0, h: 0 };
@@ -65,7 +80,7 @@
       icon: "🏹",
       cost: { money: 50, wood: 12 },
       desc: "Hızlı ok atar. Orta menzil.",
-      range: 240,
+      range: 180,
       rate: 0.9,
       dmg: 4,
       proj: "arrow",
@@ -77,7 +92,7 @@
       icon: "💥",
       cost: { money: 150, wood: 30 },
       desc: "Yavaş atar ama alan hasarı yapar.",
-      range: 300,
+      range: 200,
       rate: 2.0,
       dmg: 14,
       splash: 55,
@@ -104,10 +119,11 @@
     angle: 0, walkT: 0, faceX: 1,
     money: 30, wood: 0, meat: 0,
     hp: 100, maxHp: 100,
-    axeLevel: 1,
+    axeLevel: 1, speedLevel: 0,
     swingT: 0, swingDir: 1,
     invuln: 0,
     footT: 0,
+    score: 0,
   };
 
   const base = { x: 0, y: 0, r: 240, hp: 1000, maxHp: 1000, level: 1 };
@@ -116,6 +132,7 @@
     { id: "axe",  x: -150, y: -30, label: "🪓 Balta",  color: "#7fb6ff" },
     { id: "wall", x:  -50, y: -60, label: "🛡 Üs",     color: "#9dffb3" },
     { id: "meat", x:   50, y: -60, label: "🥩 Et",     color: "#ffb3b3" },
+    { id: "health", x: 0, y: -140, label: "❤️ Sağlık", color: "#ff8a8a" },
     { id: "guns", x:  150, y: -30, label: "🏹 Silah",  color: "#ffd66b" },
   ];
 
@@ -132,18 +149,54 @@
 
   const weapons = {
     owned: { bow: 0, cannon: 0, spike: 0 },
+    levels: { bow: 1, cannon: 1, spike: 1 },
     placed: [], // { type, x, y, cd, aim, hp }
   };
+
+  function getWeaponRange(type) {
+    const def = WEAPON_DEFS[type];
+    const level = weapons.levels[type] || 1;
+    if (type === "spike") return def.range + (level - 1) * 2;
+    if (type === "bow") return def.range + (level - 1) * 15;
+    if (type === "cannon") return def.range + (level - 1) * 20;
+    return def.range;
+  }
+
+  function getWeaponMaxCapacity(type) {
+    if (type === "bow") return Math.floor(2 + (base.level - 1) * 0.6); // Base 1: 2, Base 6: 5
+    if (type === "cannon") return Math.floor(1 + base.level * 0.4); // Base 1: 1, Base 6: 3
+    if (type === "spike") return 3 + (base.level - 1) * 1; // Base 1: 3, Base 6: 8
+    return 5;
+  }
 
   let placeMode = null; // { type, ghostWX, ghostWY, valid }
 
   let spawnTimer = 0;
-  let waveTimer = 0;
+  let waveNumber = 1;
+  let waveTimer = GRACE_TIME;
+  let waveEnemiesToSpawn = 0;
+  let waveState = "waiting"; // "waiting", "spawning", "fighting"
   let customerTimer = 0;
   let treeRespawnTimer = 0;
   let camX = 0, camY = 0;
   let shake = 0;
   let timeAlive = 0;
+  let isPaused = false;
+
+  // Lobby & Skins
+  const SKINS = [
+    { id: "default", name: "Standart", icon: "🧍", price: 0, color: "#fff" },
+    { id: "ninja", name: "Ninja", icon: "🥷", price: 200, color: "#444" },
+    { id: "knight", name: "Şövalye", icon: "🛡️", price: 500, color: "#a8b5c2" },
+    { id: "king", name: "Kral", icon: "👑", price: 1000, color: "#ffd66b" }
+  ];
+  const lobbyState = {
+    nickname: "Oyuncu",
+    selectedSkin: "default",
+    ownedSkins: ["default"],
+    leaderboard: [],
+    skinIndex: 0
+  };
 
   const input = { moveX: 0, moveY: 0, actionPressed: false, actionHeld: false };
 
@@ -173,10 +226,13 @@
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify({
         money: player.money, wood: player.wood, meat: player.meat,
-        axeLevel: player.axeLevel,
-        baseLevel: base.level, baseMaxHp: base.maxHp,
+        axeLevel: player.axeLevel, speedLevel: player.speedLevel, meatLevel: player.meatLevel,
+        baseLevel: base.level, baseMaxHp: base.maxHp, baseR: base.r,
+        playerMaxHp: player.maxHp,
         owned: weapons.owned,
-        placed: weapons.placed.map(p => ({ type: p.type, x: p.x, y: p.y })),
+        levels: weapons.levels,
+        placed: weapons.placed.map(p => ({ type: p.type, x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp })),
+        lobby: lobbyState
       }));
     } catch (e) {}
   }
@@ -206,9 +262,16 @@
     player.wood = 0;
     player.meat = 0;
     player.axeLevel = 1;
+    player.speedLevel = 0;
+    player.meatLevel = 1;
+    player.hp = 100;
+    player.maxHp = 100;
+    player.speed = 200;
     base.level = 1;
     base.maxHp = 1000;
+    base.r = 240;
     weapons.owned = { bow: 0, cannon: 0, spike: 0 };
+    weapons.levels = { bow: 1, cannon: 1, spike: 1 };
     weapons.placed = [];
 
     // Apply saved state if any
@@ -219,13 +282,35 @@
         player.wood = s.wood ?? 0;
         player.meat = s.meat ?? 0;
         player.axeLevel = s.axeLevel ?? 1;
+        player.speedLevel = s.speedLevel ?? 0;
+        player.meatLevel = s.meatLevel ?? 1;
+        player.maxHp = s.playerMaxHp ?? 100;
+        player.hp = player.maxHp;
+        player.speed = 200 + player.speedLevel * 12;
         base.level = s.baseLevel ?? 1;
+        if (base.level > 6) base.level = 6;
         base.maxHp = s.baseMaxHp ?? 1000;
-        if (s.owned) weapons.owned = { bow: 0, cannon: 0, spike: 0, ...s.owned };
+        if (base.maxHp > 3500) base.maxHp = 3500;
+        base.r = 240 + (base.level - 1) * 30;
+        base.hp = base.maxHp;
+        if (s.lobby) {
+          lobbyState.nickname = s.lobby.nickname || "Oyuncu";
+          lobbyState.selectedSkin = s.lobby.selectedSkin || "default";
+          lobbyState.ownedSkins = s.lobby.ownedSkins || ["default"];
+          lobbyState.leaderboard = s.lobby.leaderboard || [];
+          lobbyState.skinIndex = SKINS.findIndex(sk => sk.id === lobbyState.selectedSkin) || 0;
+          if (lobbyState.skinIndex === -1) lobbyState.skinIndex = 0;
+        }
+        weapons.owned = s.owned || { bow: 0, cannon: 0, spike: 0 };
+        weapons.levels = s.levels || { bow: 1, cannon: 1, spike: 1 };
+        weapons.placed = [];
         if (Array.isArray(s.placed)) {
           for (const p of s.placed) {
             if (WEAPON_DEFS[p.type]) {
-              weapons.placed.push(makeTower(p.type, p.x, p.y));
+              const tw = makeTower(p.type, p.x, p.y);
+              tw.maxHp = p.maxHp || 100;
+              tw.hp = p.hp ?? tw.maxHp;
+              weapons.placed.push(tw);
             }
           }
         }
@@ -235,6 +320,7 @@
     // Runtime
     player.x = 0; player.y = 80;
     player.hp = player.maxHp;
+    player.score = 0;
     base.hp = base.maxHp;
     timeAlive = 0;
     waveTimer = 0;
@@ -280,10 +366,16 @@
     const a = Math.random() * TAU;
     const r = WORLD_R - 30;
     const x = Math.cos(a) * r, y = Math.sin(a) * r;
+    // Scale difficulty based on wave number instead of score
+    const difficultyMul = 1 + (waveNumber * 0.3);
     if (kind === "bear") {
-      enemies.push({ kind, x, y, r: 22, speed: 65, hp: 10, maxHp: 10, dmg: 10, atkCd: 0, flash: 0, walkT: 0, slowT: 0, slowMul: 1 });
+      const hp = Math.floor(50 * difficultyMul);
+      const dmg = Math.floor(22 * difficultyMul);
+      enemies.push({ kind, x, y, r: 22, speed: 65, hp, maxHp: hp, dmg, atkCd: 0, flash: 0, walkT: 0, slowT: 0, slowMul: 1 });
     } else {
-      enemies.push({ kind: "zombie", x, y, r: 14, speed: 50, hp: 4, maxHp: 4, dmg: 6, atkCd: 0, flash: 0, walkT: 0, slowT: 0, slowMul: 1 });
+      const hp = Math.floor(8 * difficultyMul);
+      const dmg = Math.floor(10 * difficultyMul);
+      enemies.push({ kind: "zombie", x, y, r: 14, speed: 55, hp, maxHp: hp, dmg, atkCd: 0, flash: 0, walkT: 0, slowT: 0, slowMul: 1 });
     }
   }
 
@@ -318,9 +410,11 @@
       if (e.kind === "bear") {
         for (let i = 0; i < 4; i++) drop(e.x, e.y, "meat", 1);
         drop(e.x, e.y, "money", 6);
+        player.score += 50;
       } else {
         drop(e.x, e.y, "money", 3);
         if (Math.random() < 0.3) drop(e.x, e.y, "meat", 1);
+        player.score += 10;
       }
       e.dead = true;
       shake = Math.min(8, shake + 3);
@@ -404,8 +498,8 @@
     projectiles.push({
       x: tower.x, y: tower.y - 14,
       vx: (dx / len) * speed, vy: (dy / len) * speed,
-      dmg: def.dmg, splash: def.splash || 0,
-      type: def.proj, life: def.range / speed * 1.3,
+      dmg: def.dmg * (1 + ((weapons.levels[tower.type] || 1) - 1) * 0.5), splash: def.splash || 0,
+      type: def.proj, life: getWeaponRange(tower.type) / speed * 1.3,
       angle: Math.atan2(dy, dx),
     });
   }
@@ -420,7 +514,7 @@
       for (const e of enemies) {
         if (e.dead) continue;
         const d = dist(e.x, e.y, tw.x, tw.y);
-        if (d < def.range && d < td) { td = d; target = e; }
+        if (d < getWeaponRange(tw.type) && d < td) { td = d; target = e; }
       }
       if (target) {
         tw.aim = lerp(tw.aim, Math.atan2(target.y - tw.y, target.x - tw.x), clamp(8 * dt, 0, 1));
@@ -468,7 +562,7 @@
   function loop(now) {
     const dt = Math.min(0.033, (now - last) / 1000);
     last = now;
-    if (running) update(dt);
+    if (running && !isPaused) update(dt);
     render(dt);
     requestAnimationFrame(loop);
   }
@@ -546,15 +640,37 @@
       if (f.t >= f.life) fallingTrees.splice(i, 1);
     }
 
-    // ---- Spawning ----
-    if (timeAlive > GRACE_TIME) {
+    // ---- Spawning (Wave System) ----
+    if (waveState === "waiting") {
+      waveTimer -= dt;
+      if (waveTimer <= 0) {
+        waveState = "spawning";
+        waveEnemiesToSpawn = 7 + Math.floor(waveNumber * 4.5);
+        spawnTimer = 0.5;
+        toast(`Dalga ${waveNumber} Başladı!`, 2000);
+      }
+    } else if (waveState === "spawning") {
       spawnTimer -= dt;
-      waveTimer += dt;
       if (spawnTimer <= 0) {
-        const intensity = 1 + waveTimer / 90;
-        spawnTimer = clamp(3.0 / intensity, 0.9, 3.0);
-        const kind = (timeAlive > 60 && Math.random() < 0.18) ? "bear" : "zombie";
+        // Higher chance of bears on later waves
+        const bearChance = Math.min(0.35, waveNumber * 0.08);
+        const kind = Math.random() < bearChance ? "bear" : "zombie";
         spawnEnemy(kind);
+        waveEnemiesToSpawn--;
+        
+        // Spawn faster on higher waves
+        spawnTimer = clamp(2.0 - waveNumber * 0.15, 0.3, 2.0);
+        
+        if (waveEnemiesToSpawn <= 0) {
+          waveState = "fighting";
+        }
+      }
+    } else if (waveState === "fighting") {
+      if (enemies.length === 0) {
+        waveState = "waiting";
+        waveNumber++;
+        waveTimer = 10; // 10 seconds break
+        toast("Dalga Temizlendi! Yeni dalga 10 saniye sonra.", 3000);
       }
     }
 
@@ -565,10 +681,11 @@
       if (!def.isTrap) continue;
       for (const e of enemies) {
         if (e.dead) continue;
-        if (dist(tw.x, tw.y, e.x, e.y) < def.range + e.r * 0.4) {
+        if (dist(tw.x, tw.y, e.x, e.y) < getWeaponRange(tw.type) + e.r * 0.4) {
           e.slowMul = def.slow;
           // dot
-          e.hp -= def.dps * dt;
+          const twLevel = weapons.levels[tw.type] || 1;
+          e.hp -= def.dps * (1 + (twLevel - 1) * 0.5) * dt;
           if (Math.random() < 0.2) {
             particles.push({ x: e.x + rand(-6, 6), y: e.y + rand(-6, 6), vx: rand(-20, 20), vy: rand(-40, -10), life: 0.3, max: 0.3, color: "#ff8a8a", size: 2, gravity: 120 });
           }
@@ -587,16 +704,24 @@
       if (e.flash > 0) e.flash -= dt;
       e.walkT += dt * 8;
 
+      // Find nearest weapon
+      let nearestWeapon = null, minWDist = Infinity;
+      for (const tw of weapons.placed) {
+        const d = dist(e.x, e.y, tw.x, tw.y);
+        if (d < minWDist) { minWDist = d; nearestWeapon = tw; }
+      }
+
       // Target choice
       const distPlayer = dist(e.x, e.y, player.x, player.y);
       let tx, ty;
-      // If player inside base, chase player; else if enemy can see player, chase; else go to gate first
       const playerInBase = Math.hypot(player.x, player.y) < base.r - 5;
       const enemyInBase = Math.hypot(e.x, e.y) < base.r - 5;
-      if (enemyInBase || distPlayer < 200 || playerInBase) {
+      
+      if (nearestWeapon && minWDist < 80 && !enemyInBase) {
+        tx = nearestWeapon.x; ty = nearestWeapon.y;
+      } else if (enemyInBase || distPlayer < 200 || playerInBase) {
         tx = player.x; ty = player.y;
       } else {
-        // route towards gate
         tx = Math.cos(GATE_ANGLE) * (base.r + 12);
         ty = Math.sin(GATE_ANGLE) * (base.r + 12);
       }
@@ -607,28 +732,50 @@
       const nx = e.x + (dx / d) * sp * dt;
       const ny = e.y + (dy / d) * sp * dt;
 
-      // Wall collision (only gate passable)
-      const newDist = Math.hypot(nx, ny);
-      const oldDist = Math.hypot(e.x, e.y);
-      const ang = Math.atan2(ny, nx);
-      const allowedR = base.r + e.r * 0.4; // wall hit line
-      if (!inGate(ang) && oldDist > allowedR && newDist < allowedR) {
-        // Block: clamp to wall
-        const k = allowedR / Math.max(newDist, 0.01);
-        e.x = nx * k;
-        e.y = ny * k;
-        // Attack the wall
+      // Weapon collision
+      let hitWeapon = false;
+      if (nearestWeapon && dist(nx, ny, nearestWeapon.x, nearestWeapon.y) < e.r + (WEAPON_DEFS[nearestWeapon.type].r || 16)) {
+        hitWeapon = true;
         e.atkCd = Math.max(0, e.atkCd - dt);
         if (e.atkCd <= 0) {
-          base.hp -= e.dmg * 0.5;
+          nearestWeapon.hp -= e.dmg;
           e.atkCd = 0.9;
-          spawnHit(e.x, e.y);
-          shake = Math.min(6, shake + 1);
-          if (base.hp <= 0) gameOver();
+          spawnHit(nearestWeapon.x, nearestWeapon.y - 10);
+          shake = Math.min(4, shake + 1);
+          if (nearestWeapon.hp <= 0) {
+            weapons.placed.splice(weapons.placed.indexOf(nearestWeapon), 1);
+            for (let k = 0; k < 6; k++) particles.push({ x: nearestWeapon.x, y: nearestWeapon.y, vx: rand(-60, 60), vy: rand(-100, -20), life: 0.5, max: 0.5, color: "#888", size: 4, gravity: 200 });
+          }
         }
-      } else {
-        e.x = nx; e.y = ny;
-        e.atkCd = Math.max(0, e.atkCd - dt);
+      }
+
+      if (!hitWeapon) {
+        // Wall collision (strict check, only gate passable)
+        const newDist = Math.hypot(nx, ny);
+        const oldDist = Math.hypot(e.x, e.y);
+        const ang = Math.atan2(ny, nx);
+        const allowedR = base.r + e.r * 0.4;
+        const isOutside = oldDist >= allowedR - 2;
+        
+        if (!inGate(ang) && isOutside && newDist < allowedR) {
+          // Block: clamp to wall
+          const k = allowedR / Math.max(newDist, 0.01);
+          e.x = nx * k;
+          e.y = ny * k;
+          // Attack the wall
+          e.atkCd = Math.max(0, e.atkCd - dt);
+          if (e.atkCd <= 0) {
+            base.hp -= e.dmg * 2;
+            e.atkCd = 0.9;
+            spawnHit(e.x, e.y);
+            floatText(e.x, e.y - 18, "-" + Math.round(e.dmg * 2), "#ff8a8a");
+            shake = Math.min(6, shake + 1);
+            if (base.hp <= 0) gameOver();
+          }
+        } else {
+          e.x = nx; e.y = ny;
+          e.atkCd = Math.max(0, e.atkCd - dt);
+        }
       }
 
       // Hit player
@@ -740,6 +887,12 @@
     ui.hudMeat.textContent = player.meat;
     ui.hudAxe.textContent = player.axeLevel;
     ui.hudBaseBar.style.width = clamp(base.hp / base.maxHp, 0, 1) * 100 + "%";
+    
+    // Score updates over time
+    if (timeAlive > GRACE_TIME) {
+      player.score += dt * 5; // 5 points per second
+    }
+    ui.hudScore.textContent = Math.floor(player.score);
 
     // Auto-save every ~3 seconds
     if (!update._saveT || (update._saveT -= dt) <= 0) { saveGame(); update._saveT = 3; }
@@ -810,12 +963,12 @@
 
     drawSnow(camOffX, camOffY);
 
-    // Grace banner
-    if (timeAlive < GRACE_TIME && running) {
-      const left = Math.ceil(GRACE_TIME - timeAlive);
+    // Wave Banner
+    if (waveState === "waiting") {
+      const left = Math.ceil(waveTimer);
       ctx.save();
       ctx.fillStyle = "rgba(11,29,42,0.7)";
-      const text = "🛡 Hazırlık: " + left + "s";
+      const text = waveNumber === 1 ? `🛡 Hazırlık: ${left}s` : `Dalga ${waveNumber} Bekleniyor: ${left}s`;
       ctx.font = "bold 16px sans-serif";
       const w = ctx.measureText(text).width + 24;
       const x = (W - w) / 2, y = 60;
@@ -824,12 +977,24 @@
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(text, W / 2, y + 15);
       ctx.restore();
+    } else {
+      ctx.save();
+      ctx.fillStyle = "rgba(11,29,42,0.5)";
+      const text = `Dalga ${waveNumber}`;
+      ctx.font = "bold 14px sans-serif";
+      const w = ctx.measureText(text).width + 20;
+      const x = (W - w) / 2, y = 60;
+      roundRect(x, y, w, 24, 12); ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(text, W / 2, y + 12);
+      ctx.restore();
     }
 
     const st = nearestStation();
     const inside = st && dist(player.x, player.y, st.x, st.y) < 70;
-    if (placeMode) ui.btnAction.firstElementChild.textContent = "📍";
-    else ui.btnAction.firstElementChild.textContent = inside ? "🛒" : "⚔";
+    if (placeMode) ui.btnAction.textContent = "📍";
+    else ui.btnAction.textContent = inside ? "🛒" : "⚔";
   }
 
   function drawWorld() {
@@ -856,7 +1021,7 @@
 
   function drawBase() {
     ctx.beginPath(); ctx.arc(0, 0, base.r, 0, TAU);
-    ctx.fillStyle = "#f4fbff"; ctx.fill();
+    ctx.fillStyle = base.level >= 5 ? "#d0e4f2" : (base.level >= 3 ? "#e2f2fc" : "#f4fbff"); ctx.fill();
     ctx.lineWidth = 3; ctx.strokeStyle = "rgba(120,90,60,0.18)"; ctx.stroke();
     ctx.save();
     ctx.beginPath(); ctx.arc(0, 0, base.r - 4, 0, TAU); ctx.clip();
@@ -928,6 +1093,11 @@
         ctx.strokeStyle = "#7a4f25"; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(0, 0, 6, -1, 1); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(-6, 0); ctx.lineTo(6, 0); ctx.stroke();
+      } else if (s.id === "health") {
+        // red cross
+        ctx.fillStyle = "#ff4d4d";
+        ctx.fillRect(-2, -6, 4, 12);
+        ctx.fillRect(-6, -2, 12, 4);
       } else {
         ctx.fillStyle = "#a8723f"; roundRect(-8, -3, 16, 6, 2); ctx.fill();
       }
@@ -1080,6 +1250,13 @@
 
   function drawTower(tw) {
     const def = WEAPON_DEFS[tw.type];
+    const twLevel = weapons.levels[tw.type] || 1;
+    const scale = 1 + (twLevel - 1) * 0.05;
+    ctx.save();
+    ctx.translate(tw.x, tw.y);
+    ctx.scale(scale, scale);
+    ctx.translate(-tw.x, -tw.y);
+    
     // shadow
     ctx.fillStyle = "rgba(0,0,0,0.28)";
     ctx.beginPath(); ctx.ellipse(tw.x, tw.y + 10, 18, 6, 0, 0, TAU); ctx.fill();
@@ -1118,9 +1295,16 @@
     }
     // range ring on hover (when player nearby)
     if (dist(player.x, player.y, tw.x, tw.y) < 60) {
-      ctx.beginPath(); ctx.arc(tw.x, tw.y, def.range, 0, TAU);
+      ctx.beginPath(); ctx.arc(tw.x, tw.y, getWeaponRange(tw.type) * scale, 0, TAU);
       ctx.strokeStyle = "rgba(127,200,255,0.3)"; ctx.lineWidth = 1;
       ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]);
+    }
+    ctx.restore();
+    
+    if (tw.hp < (tw.maxHp || 100)) {
+      const w = 24;
+      ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(tw.x - w / 2, tw.y - 28 * scale, w, 4);
+      ctx.fillStyle = "#58e07f"; ctx.fillRect(tw.x - w / 2, tw.y - 28 * scale, w * (tw.hp / (tw.maxHp || 100)), 4);
     }
   }
 
@@ -1169,6 +1353,9 @@
   }
 
   function drawPlayer() {
+    const skinDef = SKINS.find(s => s.id === lobbyState.selectedSkin) || SKINS[0];
+    const skinColor = skinDef.color;
+
     ctx.fillStyle = "rgba(0,0,0,0.32)";
     ctx.beginPath(); ctx.ellipse(player.x, player.y + 12, 14, 5, 0, 0, TAU); ctx.fill();
     drawCarryStack(player.x, player.y - 14);
@@ -1180,15 +1367,15 @@
     ctx.fillStyle = "#2c2c2c"; ctx.fillRect(-6, 6, 4, 8 + lp); ctx.fillRect(2, 6, 4, 8 - lp);
     ctx.fillStyle = "#1a1a1a"; ctx.fillRect(-7, 13 + lp, 6, 3); ctx.fillRect(1, 13 - lp, 6, 3);
     const flashing = (player.invuln > 0 && Math.floor(performance.now() / 90) % 2 === 0);
-    ctx.fillStyle = flashing ? "#fff" : "#ff8a3d";
+    ctx.fillStyle = flashing ? "#fff" : skinColor;
     roundRect(-11, -8, 22, 18, 7); ctx.fill();
     ctx.fillStyle = "#5a3a18"; ctx.fillRect(-11, 4, 22, 3);
-    ctx.fillStyle = "#fff"; ctx.fillRect(-11, -8, 22, 2);
+    ctx.fillStyle = "rgba(255,255,255,0.2)"; ctx.fillRect(-11, -8, 22, 2);
     const sw = Math.sin(player.walkT) * 1.5;
-    ctx.fillStyle = flashing ? "#fff" : "#e87526";
+    ctx.fillStyle = flashing ? "#fff" : skinColor;
     ctx.fillRect(-13, -4 + sw, 4, 9); ctx.fillRect(9, -4 - sw, 4, 9);
     ctx.fillStyle = "#f4c89d"; ctx.beginPath(); ctx.arc(0, -14, 7, 0, TAU); ctx.fill();
-    ctx.fillStyle = flashing ? "#fff" : "#ff8a3d";
+    ctx.fillStyle = flashing ? "#fff" : skinColor;
     ctx.beginPath(); ctx.arc(0, -16, 8.5, Math.PI, TAU); ctx.fill();
     ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, -10, 8.2, Math.PI, TAU); ctx.fill();
     const swingPhase = clamp(1 - player.swingT / 0.26, 0, 1);
@@ -1279,7 +1466,7 @@
       drawTower({ x, y, type: placeMode.type, aim: 0 });
     }
     // ring
-    ctx.beginPath(); ctx.arc(x, y, def.range, 0, TAU);
+    ctx.beginPath(); ctx.arc(x, y, getWeaponRange(placeMode.type), 0, TAU);
     ctx.strokeStyle = valid ? "rgba(127,200,255,0.7)" : "rgba(255,90,90,0.7)";
     ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.stroke(); ctx.setLineDash([]);
     if (!valid) {
@@ -1312,15 +1499,26 @@
   }
 
   // ---------- Placement ----------
-  function startPlaceMode(type) {
-    placeMode = { type, ghostWX: player.x, ghostWY: player.y - 6, valid: false };
+  function startPlaceMode(type, existingTower = null) {
+    if (!existingTower) {
+      const typeCount = weapons.placed.filter(w => w.type === type).length;
+      const typeMax = getWeaponMaxCapacity(type);
+      if (typeCount >= typeMax && weapons.owned[type] > 0) {
+        toast(`Maksimum limit dolu (${typeMax})! Üssü geliştir.`);
+        return;
+      }
+    }
+    placeMode = { type, existingTower, ghostWX: player.x, ghostWY: player.y - 6, valid: false };
     ui.placeBar.classList.remove("hidden");
     ui.placeBarText.textContent =
       `${WEAPON_DEFS[type].icon} ${WEAPON_DEFS[type].name} yerleştir — üs içine dokun`;
     ui.shop.classList.add("hidden");
-    toast("Yerleştirmek için üs içinde bir noktaya dokun", 2200);
+    toast(existingTower ? "Yerini değiştirmek için dokun" : "Yerleştirmek için üs içinde bir noktaya dokun", 2200);
   }
   function cancelPlaceMode() {
+    if (placeMode && placeMode.existingTower) {
+      weapons.placed.push(placeMode.existingTower);
+    }
     placeMode = null;
     ui.placeBar.classList.add("hidden");
   }
@@ -1338,19 +1536,41 @@
   }
   function tryPlaceAt(wx, wy) {
     if (!placeMode) return;
+    
+    if (!placeMode.existingTower) {
+      const typeCount = weapons.placed.filter(w => w.type === placeMode.type).length;
+      const typeMax = getWeaponMaxCapacity(placeMode.type);
+      if (typeCount >= typeMax) {
+        toast(`Maksimum limit dolu (${typeMax})! Üssü geliştir.`);
+        cancelPlaceMode();
+        return;
+      }
+    }
+    
     if (!isValidPlacement(wx, wy)) {
       toast("Buraya yerleştirilemez", 1100);
       return;
     }
-    if (weapons.owned[placeMode.type] <= 0) {
+    
+    if (placeMode.existingTower) {
+      const tw = placeMode.existingTower;
+      tw.x = wx;
+      tw.y = wy;
+      weapons.placed.push(tw);
+      toast("Silah taşındı.", 2000);
+      placeMode.existingTower = null;
       cancelPlaceMode();
-      return;
+    } else {
+      weapons.placed.push(makeTower(placeMode.type, wx, wy));
+      weapons.owned[placeMode.type] -= 1;
+      toast(`${WEAPON_DEFS[placeMode.type].name} kuruldu.`, 3000);
+      const typeCount = weapons.placed.filter(w => w.type === placeMode.type).length;
+      const typeMax = getWeaponMaxCapacity(placeMode.type);
+      if (weapons.owned[placeMode.type] <= 0 || typeCount >= typeMax) {
+        cancelPlaceMode();
+      }
     }
-    weapons.placed.push(makeTower(placeMode.type, wx, wy));
-    weapons.owned[placeMode.type] -= 1;
     saveGame();
-    toast(`${WEAPON_DEFS[placeMode.type].name} yerleştirildi`);
-    if (weapons.owned[placeMode.type] <= 0) cancelPlaceMode();
   }
   function screenToWorld(sx, sy) {
     const W = view.w, H = view.h;
@@ -1371,20 +1591,48 @@
         buy: () => { player.axeLevel++; toast("Balta yükseldi! Lv " + player.axeLevel); },
       }],
     };
-    if (stationId === "wall") return {
-      title: "Üs Güçlendirme",
+    if (stationId === "wall") {
+      const maxed = base.level >= 6;
+      return {
+        title: "Üs Güçlendirme",
+        items: [{
+          icon: "🛡",
+          title: maxed ? `Duvarlar Maksimum (Lv ${base.level})` : `Duvarları Güçlendir (Lv ${base.level} → ${base.level + 1})`,
+          desc: "Üs canını, alanını ve silah sınırını artırır.",
+          cost: maxed ? {} : { money: 60 + base.level * 40, wood: 20 + base.level * 15 },
+          disabled: maxed,
+          buy: () => { base.level++; base.maxHp += 500; base.hp = base.maxHp; base.r += 30; toast("Üs güçlendi! Lv " + base.level); },
+        }, {
+          icon: "🔧",
+          title: "Üssü Tamir Et",
+          desc: "Mevcut canı yenile.",
+          cost: { wood: 6 },
+          buy: () => { base.hp = base.maxHp; toast("Üs tamir edildi"); },
+        }],
+      };
+    }
+    if (stationId === "health") return {
+      title: "Sağlık Çadırı",
       items: [{
-        icon: "🛡",
-        title: `Duvarları Güçlendir (Lv ${base.level} → ${base.level + 1})`,
-        desc: "Üs canını ve maks canını artırır.",
-        cost: { money: 30 + base.level * 25, wood: 15 + base.level * 8 },
-        buy: () => { base.level++; base.maxHp += 500; base.hp = base.maxHp; toast("Üs güçlendi! Lv " + base.level); },
+        icon: "❤️",
+        title: "Tam Can Yenileme",
+        desc: "Karakterin canını tamamen doldurur.",
+        cost: { money: 15, meat: 1 },
+        disabled: player.hp >= player.maxHp,
+        buy: () => { player.hp = player.maxHp; toast("Canın tamamen yenilendi!"); },
       }, {
-        icon: "🔧",
-        title: "Üssü Tamir Et",
-        desc: "Mevcut canı yenile.",
-        cost: { wood: 6 },
-        buy: () => { base.hp = base.maxHp; toast("Üs tamir edildi"); },
+        icon: "💪",
+        title: "Karakter Maks Canını Artır",
+        desc: `Maks canı 25 artırır (Şu an: ${player.maxHp}).`,
+        cost: { money: 100 + (player.maxHp - 100) },
+        buy: () => { player.maxHp += 25; player.hp += 25; toast("Maksimum canın arttı!"); },
+      }, {
+        icon: "⚡",
+        title: `Karakter Hızını Artır (Lv ${player.speedLevel}/8)`,
+        desc: player.speedLevel >= 8 ? "Maksimum hıza ulaşıldı." : "Karakterin hareket hızını biraz artırır.",
+        cost: { money: 40 + player.speedLevel * 30 },
+        disabled: player.speedLevel >= 8,
+        buy: () => { player.speedLevel++; player.speed = 200 + player.speedLevel * 12; toast("Daha hızlı koşuyorsun!"); },
       }],
     };
     if (stationId === "meat") return {
@@ -1392,34 +1640,61 @@
       items: [{
         icon: "🥩",
         title: `Hızlı Sat (${player.meat} et)`,
-        desc: `Sırtındaki tüm eti hemen sat. Birim fiyat: $${10 + base.level * 2}`,
+        desc: `Sırtındaki tüm eti hemen sat. Birim fiyat: $${10 + player.meatLevel * 2}`,
         cost: {}, disabled: player.meat <= 0,
-        buy: () => { const price = (10 + base.level * 2) * player.meat; player.money += price; toast("+$" + price); player.meat = 0; },
+        buy: () => { const price = (10 + player.meatLevel * 2) * player.meat; player.money += price; toast("+$" + price); player.meat = 0; },
       }, {
         icon: "📈",
         title: "Tezgâhı Yenile",
         desc: "Müşteri sabrını ve fiyatları artırır.",
-        cost: { money: 25 + base.level * 18, wood: 8 },
-        buy: () => { base.level++; toast("Tezgâh yükseldi! Lv " + base.level); },
+        cost: { money: 25 + player.meatLevel * 18, wood: 8 },
+        buy: () => { player.meatLevel++; toast("Tezgâh yükseldi! Lv " + player.meatLevel); },
       }],
     };
     if (stationId === "guns") {
       const items = [];
+      const placedByType = { bow: 0, cannon: 0, spike: 0 };
+      for (const p of weapons.placed) placedByType[p.type]++;
+
       for (const id of ["bow", "cannon", "spike"]) {
         const w = WEAPON_DEFS[id];
         const owned = weapons.owned[id] || 0;
+        const placed = placedByType[id] || 0;
+        const total = owned + placed;
+        const typeMax = getWeaponMaxCapacity(id);
+        const currentLevel = weapons.levels[id] || 1;
+        const maxWeaponLevel = base.level + 2;
+
+        const canBuyOrPlace = (owned > 0 && placed < typeMax) || (owned === 0 && total < typeMax);
+
         items.push({
           icon: w.icon,
           owned,
-          title: w.name,
-          desc: w.desc + " Menzil: " + (w.isTrap ? w.range : w.range) + (w.dmg ? `, hasar ${w.dmg}` : "") + (w.dps ? `, ${w.dps}/sn` : "") + (w.splash ? `, alan ${w.splash}` : ""),
-          cost: w.cost,
-          buy: () => { weapons.owned[id] = owned + 1; saveGame(); startPlaceMode(id); },
-          extra: owned > 0 ? {
-            label: "Yerleştir",
-            action: () => { startPlaceMode(id); },
-            cls: "place",
-          } : null,
+          title: total >= typeMax ? `${w.name} (Limit: ${typeMax})` : `${w.name} (Lv ${currentLevel}/${maxWeaponLevel})`,
+          desc: w.desc,
+          cost: owned > 0 ? {} : w.cost,
+          disabled: !canBuyOrPlace,
+          buy: () => {
+            if (owned === 0) { weapons.owned[id] = 1; saveGame(); }
+            startPlaceMode(id);
+          },
+          extra: {
+            label: currentLevel >= maxWeaponLevel ? "Max" : `Yükselt ($${50 * currentLevel})`,
+            action: () => {
+              if (currentLevel >= maxWeaponLevel) { toast("Önce üssü geliştir!"); return; }
+              const upCost = 50 * currentLevel;
+              if (player.money >= upCost) {
+                player.money -= upCost;
+                weapons.levels[id] = currentLevel + 1;
+                saveGame();
+                openShop(stationId);
+                toast(`${w.name} Seviye ${currentLevel + 1} oldu!`);
+              } else {
+                toast("Yetersiz para!");
+              }
+            },
+            cls: currentLevel >= maxWeaponLevel ? "" : "place",
+          }
         });
       }
       return { title: "Silah Marketi", items };
@@ -1455,7 +1730,7 @@
 
       // primary button
       const btn = document.createElement("button");
-      btn.textContent = it.disabled ? "—" : (it.extra ? "Al" : "Al");
+      btn.textContent = it.disabled ? "—" : (it.owned > 0 ? "Kur" : "Al");
       btn.disabled = !!it.disabled || !canAfford(it.cost);
       btn.onclick = () => {
         if (it.disabled) return;
@@ -1463,7 +1738,7 @@
         pay(it.cost);
         it.buy();
         saveGame();
-        openShop(stationId);
+        if (!placeMode) openShop(stationId);
       };
       row.append(btn);
 
@@ -1504,10 +1779,17 @@
   function gameOver() {
     if (!running) return;
     running = false;
+    
+    // Add to leaderboard
+    lobbyState.leaderboard.push({ name: lobbyState.nickname, score: player.score });
+    lobbyState.leaderboard.sort((a, b) => b.score - a.score);
+    if (lobbyState.leaderboard.length > 10) lobbyState.leaderboard = lobbyState.leaderboard.slice(0, 10);
+    
     saveGame();
+    initLobby(); // refresh UI
+    
     ui.start.classList.remove("hidden");
     ui.start.querySelector("h1").textContent = base.hp <= 0 ? "Üs düştü!" : "Eyvah, can bitti!";
-    ui.start.querySelector("p").textContent = "İlerlemen kaydedildi. Devam etmek ister misin?";
     ui.btnStart.textContent = "Devam Et";
   }
 
@@ -1524,8 +1806,12 @@
     swings.length = 0;
     projectiles.length = 0;
     timeAlive = 0;
-    waveTimer = 0;
-    spawnTimer = GRACE_TIME;
+    waveNumber = 1;
+    waveTimer = GRACE_TIME;
+    waveEnemiesToSpawn = 0;
+    waveState = "waiting";
+    player.score = 0;
+    spawnTimer = 0;
   }
 
   // ---------- Input ----------
@@ -1580,7 +1866,9 @@
   // Canvas pointer for placement / ghost preview
   function isInteractiveTarget(t) {
     if (!t) return false;
-    return ui.joy.contains(t) || ui.btnAction.contains(t) || ui.shop.contains(t) || ui.placeBar.contains(t) || ui.start.contains(t);
+    return ui.joy.contains(t) || ui.btnAction.contains(t) || ui.shop.contains(t) || 
+           ui.placeBar.contains(t) || ui.start.contains(t) ||
+           ui.btnPause.contains(t) || ui.pauseMenu.contains(t);
   }
   function canvasPointerMove(e) {
     if (!placeMode) return;
@@ -1591,15 +1879,38 @@
     placeMode.ghostWY = wp.y;
   }
   function canvasPointerDown(e) {
-    if (!placeMode) return;
     if (isInteractiveTarget(e.target)) return;
-    e.preventDefault();
+    
     const t = e.touches ? e.touches[0] : e;
     const wp = screenToWorld(t.clientX, t.clientY);
-    placeMode.ghostWX = wp.x;
-    placeMode.ghostWY = wp.y;
-    tryPlaceAt(wp.x, wp.y);
+
+    if (placeMode) {
+      e.preventDefault();
+      placeMode.ghostWX = wp.x;
+      placeMode.ghostWY = wp.y;
+      tryPlaceAt(wp.x, wp.y);
+      return;
+    }
+    
+    // Move tower
+    let clickedTower = null;
+    let clickedIndex = -1;
+    for (let i = 0; i < weapons.placed.length; i++) {
+      const tw = weapons.placed[i];
+      if (dist(wp.x, wp.y, tw.x, tw.y) < 50) {
+        clickedTower = tw;
+        clickedIndex = i;
+        break;
+      }
+    }
+    
+    if (clickedTower) {
+      e.preventDefault();
+      weapons.placed.splice(clickedIndex, 1);
+      startPlaceMode(clickedTower.type, clickedTower);
+    }
   }
+
   canvas.addEventListener("mousemove", canvasPointerMove);
   canvas.addEventListener("touchmove", canvasPointerMove, { passive: false });
   canvas.addEventListener("mousedown", canvasPointerDown);
@@ -1609,7 +1920,15 @@
   window.addEventListener("keydown", e => {
     keys[e.key.toLowerCase()] = true;
     if (e.key === " ") { input.actionPressed = true; input.actionHeld = true; }
-    if (e.key === "Escape") { ui.shop.classList.add("hidden"); cancelPlaceMode(); }
+    if (e.key === "Escape") { 
+      if (!ui.shop.classList.contains("hidden")) {
+        ui.shop.classList.add("hidden");
+      } else if (placeMode) {
+        cancelPlaceMode();
+      } else {
+        togglePause();
+      }
+    }
     updateKeyboardMove();
   });
   window.addEventListener("keyup", e => {
@@ -1629,37 +1948,128 @@
 
   // ---------- Start / Reset ----------
   function startGame() {
+    lobbyState.nickname = ui.inputNickname.value || "Oyuncu";
     const hadSave = !!loadGame();
     if (hadSave && player.hp <= 0) {
-      // we are coming from gameOver; respawn keeps state
       respawn();
     } else {
-      // first start or fresh after reset: build world from save (or defaults)
       initWorld(true);
     }
     running = true;
     last = performance.now();
     ui.start.classList.add("hidden");
-    if (loadGame()) toast("İlerleme yüklendi", 1500);
-    else toast("🛡 İlk 15 saniye güvenli!");
+    saveGame(); // save nickname etc.
+    toast("Oyun başladı");
   }
+
+  function togglePause() {
+    if (!running) return;
+    isPaused = !isPaused;
+    if (isPaused) {
+      ui.pauseMenu.classList.remove("hidden");
+    } else {
+      ui.pauseMenu.classList.add("hidden");
+      last = performance.now(); // prevent large dt after pause
+    }
+  }
+
+  ui.btnPause.addEventListener("click", togglePause);
+  ui.btnResume.addEventListener("click", togglePause);
+  ui.btnSettings.addEventListener("click", () => {
+    toast("Ayarlar menüsü yakında eklenecek!");
+  });
+  ui.btnToLobby.addEventListener("click", () => {
+    running = false;
+    isPaused = false;
+    ui.pauseMenu.classList.add("hidden");
+    saveGame();
+    initLobby();
+    ui.start.classList.remove("hidden");
+    ui.start.querySelector("h1").textContent = "Arctic Survivor";
+    ui.btnStart.textContent = "Devam Et";
+  });
 
   ui.btnStart.addEventListener("click", startGame);
   ui.btnReset.addEventListener("click", () => {
     if (!confirm("Tüm ilerleme silinsin mi?")) return;
     resetSave();
     initWorld(false);
+    lobbyState.leaderboard = [];
+    lobbyState.ownedSkins = ["default"];
+    lobbyState.selectedSkin = "default";
+    lobbyState.nickname = "Oyuncu";
+    lobbyState.skinIndex = 0;
+    initLobby();
     toast("İlerleme sıfırlandı");
   });
 
-  // Update start screen label depending on save
-  (function setupStart() {
-    if (loadGame()) {
-      ui.btnStart.textContent = "Devam Et";
-      const p = ui.start.querySelector("p");
-      if (p) p.textContent = "Önceki ilerleme yüklendi. Hadi devam edelim.";
+  function renderLobbySkin() {
+    const sk = SKINS[lobbyState.skinIndex];
+    ui.skinIcon.textContent = sk.icon;
+    ui.skinName.textContent = sk.name;
+    const isOwned = lobbyState.ownedSkins.includes(sk.id);
+    const isSelected = lobbyState.selectedSkin === sk.id;
+    
+    if (isOwned) {
+      ui.skinPrice.textContent = "Sahipsin";
+      ui.btnBuySkin.classList.add("hidden");
+      if (isSelected) {
+        ui.btnSelectSkin.classList.add("hidden");
+        ui.skinPrice.textContent = "Seçili";
+      } else {
+        ui.btnSelectSkin.classList.remove("hidden");
+      }
+    } else {
+      ui.skinPrice.textContent = `$${sk.price}`;
+      ui.btnBuySkin.classList.remove("hidden");
+      ui.btnSelectSkin.classList.add("hidden");
     }
-  })();
+  }
+
+  ui.skinPrev.addEventListener("click", () => {
+    lobbyState.skinIndex = (lobbyState.skinIndex - 1 + SKINS.length) % SKINS.length;
+    renderLobbySkin();
+  });
+  ui.skinNext.addEventListener("click", () => {
+    lobbyState.skinIndex = (lobbyState.skinIndex + 1) % SKINS.length;
+    renderLobbySkin();
+  });
+  ui.btnBuySkin.addEventListener("click", () => {
+    const sk = SKINS[lobbyState.skinIndex];
+    if (player.money >= sk.price) {
+      player.money -= sk.price;
+      lobbyState.ownedSkins.push(sk.id);
+      lobbyState.selectedSkin = sk.id;
+      saveGame();
+      renderLobbySkin();
+      toast("Kostüm alındı!");
+    } else {
+      toast("Para yetersiz!");
+    }
+  });
+  ui.btnSelectSkin.addEventListener("click", () => {
+    const sk = SKINS[lobbyState.skinIndex];
+    lobbyState.selectedSkin = sk.id;
+    saveGame();
+    renderLobbySkin();
+  });
+
+  function initLobby() {
+    ui.inputNickname.value = lobbyState.nickname;
+    lobbyState.skinIndex = SKINS.findIndex(sk => sk.id === lobbyState.selectedSkin) || 0;
+    renderLobbySkin();
+    
+    ui.leaderboardList.innerHTML = "";
+    if (lobbyState.leaderboard.length === 0) {
+      ui.leaderboardList.innerHTML = "<li><span class='name'>Yok</span><span class='score'>-</span></li>";
+    } else {
+      for (const entry of lobbyState.leaderboard) {
+        const li = document.createElement("li");
+        li.innerHTML = `<span class='name'>${entry.name}</span><span class='score'>${entry.score}</span>`;
+        ui.leaderboardList.appendChild(li);
+      }
+    }
+  }
 
   initWorld(true);
 })();

@@ -32,12 +32,18 @@
           <span class="ico ico-base"></span>
           <div class="bar"><div id="hudBaseBar" class="bar-fill"></div></div>
         </div>
+        <div class="stat" title="Skor">
+          <span class="ico ico-score">🏆</span><span id="hudScore">0</span>
+        </div>
       </div>
 
       <!-- Joystick -->
       <div id="joystick" class="joystick">
         <div id="stick" class="stick"></div>
       </div>
+
+      <!-- Pause Button -->
+      <button id="btnPause" class="btn-pause" aria-label="Duraklat">⏸</button>
 
       <!-- Action button -->
       <button id="btnAction" class="btn-action" aria-label="Saldır / Topla">
@@ -61,40 +67,58 @@
         <button id="placeCancel">İptal</button>
       </div>
 
-      <!-- Tower management panel -->
-      <div id="towerPanel" class="tower-panel hidden">
-        <div class="tp-row">
-          <div class="tp-icon" id="tpIcon">🏹</div>
-          <div class="tp-info">
-            <div class="tp-title"><span id="tpName">Yay Kulesi</span> <span class="tp-level" id="tpLevel">Lv 1</span></div>
-            <div class="tp-bar"><div id="tpHpBar" class="tp-bar-fill"></div></div>
-            <div class="tp-stats" id="tpStats"></div>
-          </div>
-        </div>
-        <div class="tp-actions">
-          <button id="tpUpgrade" class="tp-btn primary">Yükselt</button>
-          <button id="tpRepair" class="tp-btn">Tamir</button>
-          <button id="tpSell" class="tp-btn danger">Sat</button>
-        </div>
-      </div>
 
       <!-- Toast -->
       <div id="toast" class="toast"></div>
 
-      <!-- Start screen -->
+      <!-- Pause Menu -->
+      <div id="pauseMenu" class="pause-menu hidden">
+        <div class="pause-card">
+          <h2>Oyun Duraklatıldı</h2>
+          <div class="pause-actions">
+            <button id="btnResume" class="btn-primary">Devam Et</button>
+            <button id="btnSettings" class="btn-secondary">Ayarlar</button>
+            <button id="btnToLobby" class="btn-secondary danger">Lobiye Dön</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Start screen (Lobby) -->
       <div id="start" class="start">
         <div class="start-card">
           <h1>Arctic Survivor</h1>
-          <p>
-            Ağaçları kes, zombi ve ayıları biç. Üsse dön, eti sat, baltanı ve
-            üssünü güçlendir.
+          
+          <div class="lobby-section">
+            <input type="text" id="inputNickname" placeholder="Kullanıcı Adı" maxlength="15" />
+          </div>
+
+          <div class="lobby-section">
+            <h3>Karakter Seçimi</h3>
+            <div class="skin-selector">
+              <button id="skinPrev" class="skin-btn">◀</button>
+              <div class="skin-display">
+                <div id="skinIcon" class="skin-preview">🧍</div>
+                <div id="skinName">Standart</div>
+                <div id="skinPrice" class="skin-price">Ücretsiz</div>
+              </div>
+              <button id="skinNext" class="skin-btn">▶</button>
+            </div>
+            <button id="btnBuySkin" class="btn-secondary hidden">Satın Al</button>
+            <button id="btnSelectSkin" class="btn-secondary hidden">Seç</button>
+          </div>
+
+          <div class="lobby-section leaderboard">
+            <h3>En İyiler (Yerel)</h3>
+            <ul id="leaderboardList">
+              <!-- Populated by JS -->
+            </ul>
+          </div>
+
+          <p class="tutorial-text">
+            <b>Joystick</b> hareket | <b>⚔</b> saldır/topla | <b>Tezgâhlar</b> market
           </p>
-          <ul class="legend">
-            <li><b>Joystick</b> ile hareket</li>
-            <li><b>⚔</b> butonu ile saldır / topla</li>
-            <li>Üsteki <b>tezgâhlara</b> dokun: market açılır</li>
-          </ul>
-          <button id="btnStart" class="btn-primary">Oyna</button>
+
+          <button id="btnStart" class="btn-primary">Oyuna Başla</button>
           <br />
           <button id="btnReset" class="btn-link">Tüm ilerlemeyi sıfırla</button>
         </div>
